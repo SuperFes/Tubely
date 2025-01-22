@@ -1,15 +1,17 @@
 package main
 
 import (
+	"context"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
-
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-	"github.com/google/uuid"
-
-	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
+	"strings"
 )
 
 type apiConfig struct {
@@ -18,9 +20,11 @@ type apiConfig struct {
 	platform         string
 	filepathRoot     string
 	assetsRoot       string
+	awsConfig        aws.Config
 	s3Bucket         string
 	s3Region         string
 	s3CfDistribution string
+	s3Client         *s3.Client
 	port             string
 }
 
@@ -29,7 +33,15 @@ type thumbnail struct {
 	mediaType string
 }
 
-var videoThumbnails = map[uuid.UUID]thumbnail{}
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	stuff := strings.Split(*video.VideoURL, ",")
+
+	newUrl := cfg.s3CfDistribution + stuff[1]
+
+	video.VideoURL = &newUrl
+
+	return video, nil
+}
 
 func main() {
 	godotenv.Load(".env")
@@ -96,6 +108,12 @@ func main() {
 		port:             port,
 	}
 
+	cfg.awsConfig, err = config.LoadDefaultConfig(context.TODO())
+
+	cfg.awsConfig.Region = cfg.s3Region
+
+	cfg.s3Client = s3.NewFromConfig(cfg.awsConfig)
+
 	err = cfg.ensureAssetsDir()
 	if err != nil {
 		log.Fatalf("Couldn't create assets directory: %v", err)
@@ -106,7 +124,7 @@ func main() {
 	mux.Handle("/app/", appHandler)
 
 	assetsHandler := http.StripPrefix("/assets", http.FileServer(http.Dir(assetsRoot)))
-	mux.Handle("/assets/", cacheMiddleware(assetsHandler))
+	mux.Handle("/assets/", noCacheMiddleware(assetsHandler))
 
 	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
 	mux.HandleFunc("POST /api/refresh", cfg.handlerRefresh)

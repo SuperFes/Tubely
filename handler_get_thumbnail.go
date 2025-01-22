@@ -1,10 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-
 	"github.com/google/uuid"
+	"net/http"
+	"path/filepath"
 )
 
 func (cfg *apiConfig) handlerThumbnailGet(w http.ResponseWriter, r *http.Request) {
@@ -15,16 +14,9 @@ func (cfg *apiConfig) handlerThumbnailGet(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tn, ok := videoThumbnails[videoID]
-	if !ok {
-		respondWithError(w, http.StatusNotFound, "Thumbnail not found", nil)
-		return
-	}
+	data := []byte("/" + filepath.Join(cfg.assetsRoot, videoID.String()+".png"))
 
-	w.Header().Set("Content-Type", tn.mediaType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(tn.data)))
-
-	_, err = w.Write(tn.data)
+	_, err = w.Write(data)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error writing response", err)
 		return
